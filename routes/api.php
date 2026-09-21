@@ -50,6 +50,7 @@ Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']
 // ============================================================
 // PROTECTED ROUTES
 // ============================================================
+ Route::get('backups/{filename}/download', [BackupController::class, 'download']);
 Route::middleware(['auth:sanctum', 'session.timeout'])->group(function () {
 
     /* ============================================================
@@ -127,7 +128,7 @@ Route::middleware(['auth:sanctum', 'session.timeout'])->group(function () {
     Route::prefix('backups')->group(function () {
         Route::get('/',              [BackupController::class, 'index']);
         Route::post('/create',       [BackupController::class, 'create']);
-        Route::get('/{filename}/download', [BackupController::class, 'download']);
+        
         Route::post('/{filename}/restore', [BackupController::class, 'restore']);
         Route::delete('/{filename}', [BackupController::class, 'destroy']);
     });
