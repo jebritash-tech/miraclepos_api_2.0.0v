@@ -339,7 +339,7 @@ class ReportController extends Controller
                 return $q->where('sales.branch_id', $branchId);
             })
             ->groupBy('categories.id', 'categories.name')
-            ->having('total_sales', '>', 0)
+            ->havingRaw('COALESCE(SUM(sale_items.price * sale_items.quantity), 0) > 0')  // ✅
             ->orderBy('total_sales', 'desc')
             ->get();
             // 12. فواتير اليوم (بالتفصيل)
