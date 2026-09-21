@@ -16,7 +16,23 @@ return new class extends Migration
             $table->foreignId('category_id')->nullable()->constrained()->onDelete('set null');
             $table->string('name')->index();
             $table->string('scientific_name')->nullable();
-            $table->string('barcode')->unique()->index();
+            $table->string('notes')->nullable();
+            
+            $table->enum('pricing_method',[
+                'local',
+                'imported'
+            ])->default('local');
+
+            $table->integer('strips_per_box')->default(1);
+
+            $table->integer('pieces_per_strip')->default(1);
+
+            $table->boolean('allow_box_sale')->default(true);
+
+            $table->boolean('allow_strip_sale')->default(true);
+
+            $table->boolean('allow_piece_sale')->default(true);
+            
             $table->timestamps();
             $table->softDeletes();
             

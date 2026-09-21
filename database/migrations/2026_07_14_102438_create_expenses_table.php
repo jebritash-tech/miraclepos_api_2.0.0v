@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('expenses', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('shift_id')
+            $table->foreignId('shift_id')->nullable()
                 ->constrained()
                 ->cascadeOnDelete();
 
@@ -28,6 +28,10 @@ return new class extends Migration
 
             $table->text('notes')
                 ->nullable();
+            $table->string('category')->nullable();
+            $table->enum('payment_method', ['cash', 'bank'])->nullable();
+            $table->string('bank_name')->nullable();
+            $table->string('bank_reference')->nullable();
 
             $table->timestamps();
         });

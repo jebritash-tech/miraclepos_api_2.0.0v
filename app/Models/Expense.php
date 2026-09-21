@@ -17,8 +17,12 @@ class Expense extends Model
 
         'title',
 
-        'notes'
-
+        'notes',
+        'category',           // ✅ جديد
+        'payment_method',     // ✅ جديد
+        'bank_name',          // ✅ جديد
+        'bank_reference',     // ✅ جديد
+        'created_at',
     ];
 
     public function shift()

@@ -7,63 +7,67 @@ use App\Models\PurchaseItem;
 use App\Models\MedicineBatch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\PurchaseService;
+use App\Http\Requests\PurchaseRequest;
 
 class PurchaseController extends Controller
 {
-    public function store(Request $request)
+    public function store(PurchaseRequest $request)
     {
-        $request->validate([
-            'supplier_id' => 'required|exists:suppliers,id',
-            'items' => 'required|array',
-            'items.*.medicine_id' => 'required|exists:medicines,id',
-            'items.*.batch_number' => 'required|string',
-            'items.*.expiry_date' => 'required|date',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.cost_price' => 'required|numeric',
-            'items.*.selling_price' => 'required|numeric',
-        ]);
+        DB::beginTransaction();
 
-        return DB::transaction(function () use ($request) {
-            // 1. حساب الإجمالي
-            $totalAmount = collect($request->items)->sum(function ($item) {
-                return $item['cost_price'] * $item['quantity'];
-            });
+        try {
+            $purchase = app(PurchaseService::class)->store($request->validated());
 
-            // 2. إنشاء الفاتورة
-            $purchase = Purchase::create([
-                'supplier_id' => $request->supplier_id,
-                'total_amount' => $totalAmount,
+            DB::commit();
+
+            $purchases = Purchase::with(['supplier', 'items.medicine'])
+                ->latest()
+                ->paginate(10);
+
+            return response()->json([
+                'message' => 'تم تسجيل المشتريات بنجاح',
+                'purchase' => $purchase->load('items', 'supplier'),
+                'purchases' => $purchases->items(),
+                'pagination' => [
+                    'currentPage' => $purchases->currentPage(),
+                    'lastPage' => $purchases->lastPage(),
+                    'total' => $purchases->total(),
+                    'perPage' => $purchases->perPage()
+                ]
             ]);
 
-            // 3. إضافة العناصر وإنشاء الدفعات (Batches)
-            foreach ($request->items as $item) {
-                // إنشاء الدفعة في جدول الدفعات
-                $batch = MedicineBatch::create([
-                    'medicine_id' => $item['medicine_id'],
-                    'batch_number' => $item['batch_number'],
-                    'expiry_date' => $item['expiry_date'],
-                    'quantity' => $item['quantity'],
-                    'cost_price' => $item['cost_price'],
-                    'selling_price' => $item['selling_price'],
-                ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
 
-                // تسجيل تفاصيل العنصر في الفاتورة
-                $purchase->items()->create([
-                    'medicine_batch_id' => $batch->id,
-                    'quantity' => $item['quantity'],
-                    'price' => $item['cost_price'],
-                ]);
+    // إضافة دالة لجلب جميع المشتريات (للجدول)
+    public function index()
+    {
+        $purchases = Purchase::with(['supplier', 'items.medicine'])
+            ->latest()
+            ->paginate(10);
+
+        return response()->json([
                 
-                // إضافة سجل في الـ InventoryLog
-                \App\Models\InventoryLog::create([
-                    'medicine_batch_id' => $batch->id,
-                    'type' => 'purchase',
-                    'quantity_changed' => $item['quantity'], // موجب لأنها إضافة
-                    'notes' => 'Purchase Invoice ID: ' . $purchase->id
-                ]);
-            }
+                'purchases' => $purchases->items(), // البيانات
+                'pagination' => [
+                    'currentPage' => $purchases->currentPage(),
+                    'lastPage' => $purchases->lastPage(),
+                    'total' => $purchases->total(),
+                    'perPage' => $purchases->perPage()
+                ]
+            ]);
+    }
 
-            return response()->json(['message' => 'تم تسجيل المشتريات بنجاح', 'purchase_id' => $purchase->id], 201);
-        });
+    // إضافة دالة لجلب فاتورة شراء محددة
+    public function show($id)
+    {
+        $purchase = Purchase::with(['supplier', 'items.medicine'])
+            ->findOrFail($id);
+
+        return response()->json($purchase);
     }
 }

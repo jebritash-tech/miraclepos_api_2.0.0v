@@ -21,7 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'EnsureUserIsAdmin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
         ]);
-
+        $middleware->alias([
+            'session.timeout' => \App\Http\Middleware\EnforceSessionTimeout::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

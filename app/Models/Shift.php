@@ -48,17 +48,19 @@ class Shift extends Model
         'closed_at' => 'datetime'
 
     ];
-
     protected $appends = [
-
         'difference',
-
         'duration',
-        'opened',
-        'closed'
-
     ];
+    public function getOpenedAtFormattedAttribute()
+    {
+        return $this->opened_at?->format('Y-m-d H:i');
+    }
 
+    public function getClosedAtFormattedAttribute()
+    {
+        return $this->closed_at?->format('Y-m-d H:i');
+    }
     public function getOpenedAttribute()
     {
 

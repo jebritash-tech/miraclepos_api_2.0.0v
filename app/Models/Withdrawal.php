@@ -15,7 +15,8 @@ class Withdrawal extends Model
 
         'amount',
 
-        'reason'
+        'reason',
+        'created_at',  // ✅ جديد
 
     ];
 

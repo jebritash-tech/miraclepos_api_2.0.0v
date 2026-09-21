@@ -39,7 +39,7 @@ class MedicineSeeder extends Seeder
 
                 'scientific_name' => $medicine,
 
-                'barcode' => '10000000'.$index,
+                'notes' => 'لا يوجد ملاحظات',
 
                 'created_at' => now(),
 

@@ -8,26 +8,48 @@ use Illuminate\Http\Request;
 
 class SupplierController extends Controller
 {
-    public function index() { return response()->json(Supplier::all()); }
+    public function index()
+    {
+        return response()->json(Supplier::all());
+    }
 
-    public function store(Request $request) {
+    public function store(Request $request)
+    {
         $data = $request->validate([
             'name' => 'required',
             'phone' => 'nullable',
             'email' => 'nullable|email'
         ]);
-        return response()->json(Supplier::create($data), 201);
+        $supplier = Supplier::create($data);
+        return response()->json([
+            'message' => 'تم إضافة المورد بنجاح',
+            'supplier' => $supplier,
+            'suppliers' => Supplier::all()
+        ], 201);
     }
 
-    public function update(Request $request, $id) {
+    public function update(Request $request, $id)
+    {
         $supplier = Supplier::findOrFail($id);
-        $data = $request->validate(['name' => 'required', 'phone' => 'nullable', 'email' => 'nullable']);
+        $data = $request->validate([
+            'name' => 'required',
+            'phone' => 'nullable',
+            'email' => 'nullable|email'
+        ]);
         $supplier->update($data);
-        return response()->json(['message' => 'تم التحديث بنجاح']);
+        return response()->json([
+            'message' => 'تم تحديث المورد بنجاح',
+            'supplier' => $supplier->fresh(),
+            'suppliers' => Supplier::all()
+        ]);
     }
 
-    public function destroy($id) {
+    public function destroy($id)
+    {
         Supplier::destroy($id);
-        return response()->json(['message' => 'تم الحذف']);
+        return response()->json([
+            'message' => 'تم حذف المورد بنجاح',
+            'suppliers' => Supplier::all()
+        ]);
     }
 }

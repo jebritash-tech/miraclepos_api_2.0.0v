@@ -13,10 +13,14 @@ return new class extends Migration
     {
         Schema::create('purchase_items', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('purchase_id')->constrained()->onDelete('cascade');
-            $table->foreignId('medicine_batch_id')->constrained('medicine_batches'); // هذا هو السطر المفقود!
-            $table->integer('quantity');
-            $table->decimal('price', 10, 2);
+            $table->foreignId('purchase_id')->constrained('purchases')->cascadeOnDelete();
+            $table->foreignId('medicine_id')->constrained('medicines')->cascadeOnDelete();
+            $table->foreignId('unit_id')->constrained('units')->cascadeOnDelete();
+            $table->decimal('quantity', 12, 2);
+            $table->decimal('factor', 10, 4)->default(1.0000);
+            $table->decimal('base_quantity', 12, 2);
+            $table->decimal('buy_price', 12, 2);
+            $table->decimal('subtotal', 12, 2);
             $table->timestamps();
         });
     }

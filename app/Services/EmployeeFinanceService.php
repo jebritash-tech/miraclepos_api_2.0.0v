@@ -17,45 +17,61 @@ class EmployeeFinanceService
 
     ){}
 
-    public function withdraw(array $data)
-    {
-        $withdrawal =
-            $this->withdrawals
-            ->create($data);
+   public function withdraw(array $data)
+{
+    $withdrawal =
+        $this->withdrawals
+        ->create([
 
-        $debt =
-            $this->debts
-            ->create([
+            'user_id' =>
+                $data['user_id'],
 
-                'user_id'
-                    =>$data['user_id'],
+            'shift_id' =>
+                $data['shift_id'],
 
-                'shift_id'
-                    =>$data['shift_id'],
-
-                'amount'
-                    =>$data['amount'],
-
-                'reason'
-                    =>$data['reason']
-
-            ]);
-
-        $this->shiftService
-            ->registerWithdrawal(
-
+            'amount' =>
                 $data['amount'],
 
-                $withdrawal->shift
+            'reason' =>
+                $data['reason']
 
-            );
+        ]);
 
-        return [
+    $debt =
+        $this->debts
+        ->create([
 
-            'withdrawal'=>$withdrawal,
+            'user_id'
+                => $data['user_id'],
 
-            'debt'=>$debt
+            'shift_id'
+                => $data['shift_id'],
 
-        ];
-    }
+            'amount'
+                => $data['amount'],
+
+            'reason'
+                => $data['reason']
+
+        ]);
+
+    $this->shiftService
+        ->registerWithdrawal(
+
+            $data['amount'],
+
+            $withdrawal->shift
+
+        );
+
+    return [
+
+        'withdrawal' =>
+            $withdrawal,
+
+        'debt' =>
+            $debt
+
+    ];
+}
 }

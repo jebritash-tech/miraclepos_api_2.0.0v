@@ -14,14 +14,17 @@ return new class extends Migration
         Schema::create('debt_payments', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('employee_debt_id')
+            $table->foreignId('debt_id')
+                ->constrained()
+                ->cascadeOnDelete();
+
+            $table->foreignId('user_id')
                 ->constrained()
                 ->cascadeOnDelete();
 
             $table->decimal('amount',15,2);
 
-            $table->foreignId('received_by')
-                ->constrained('users');
+            $table->text('notes')->nullable();
 
             $table->timestamps();
         });

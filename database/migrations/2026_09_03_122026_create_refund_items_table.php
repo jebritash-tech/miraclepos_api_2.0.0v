@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('purchases', function (Blueprint $table) {
+        Schema::create('refund_items', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('supplier_id')->constrained();
-            $table->decimal('total_amount', 12, 2);
+            $table->foreignId('refund_id')->constrained()->onDelete('cascade');
+            $table->foreignId('sale_item_id')->constrained()->onDelete('cascade');
+            $table->integer('quantity');
+            $table->decimal('price', 10, 2); // سعر البيع وقت الإرجاع
             $table->timestamps();
         });
     }
@@ -24,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('purchases');
+        Schema::dropIfExists('refund_items');
     }
 };

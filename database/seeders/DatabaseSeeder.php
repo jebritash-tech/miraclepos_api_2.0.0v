@@ -2,30 +2,31 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
-     * Seed the application's database.
+     * ═══════════════════════════════════════════════════════════════
+     * DatabaseSeeder — نقطة الدخول الرئيسية
+     * ═══════════════════════════════════════════════════════════════
+     * 
+     * التشغيل:
+     *   php artisan migrate:fresh --seed
+     * 
+     * أو:
+     *   php artisan db:seed
+     * ═══════════════════════════════════════════════════════════════
      */
     public function run(): void
     {
         $this->call([
-            BranchSeeder::class,
-            CategorySeeder::class,
-            SupplierSeeder::class,
-            UserSeeder::class,
-            MedicineSeeder::class,
-            MedicineBatchSeeder::class,
-            PurchaseSeeder::class,
-            SaleSeeder::class,
-            RefundSeeder::class,
+            CoreDataSeeder::class,
         ]);
+
+        // يمكن إضافة Seeders أخرى هنا لاحقاً
+        // $this->call([
+        //     DemoDataSeeder::class, // للبيئات التجريبية فقط
+        // ]);
     }
 }

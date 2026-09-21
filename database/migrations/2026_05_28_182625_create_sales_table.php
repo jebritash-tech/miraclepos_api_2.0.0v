@@ -18,7 +18,14 @@ return new class extends Migration
             $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
             $table->decimal('total_amount', 12, 2);
             $table->decimal('profit_amount', 10, 2)->default(0);
+            
             $table->string('payment_method')->default('cash'); // cash, card, etc
+            $table->string('bank_name')->nullable();
+            $table->string('bank_reference')->nullable();
+            $table->date('bank_transfer_date')->nullable();
+            $table->string('bank_notes')->nullable();
+            
+            
             $table->timestamps();
         });
     }

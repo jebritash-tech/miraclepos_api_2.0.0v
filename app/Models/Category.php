@@ -9,4 +9,7 @@ class Category extends Model
     use SoftDeletes;
     //
     protected $fillable = ['name'];
+    public function medicines() {
+        return $this->hasMany(Medicine::class);
+    }
 }

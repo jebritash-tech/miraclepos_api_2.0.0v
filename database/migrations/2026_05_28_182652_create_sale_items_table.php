@@ -16,6 +16,23 @@ return new class extends Migration
             $table->foreignId('sale_id')->constrained()->onDelete('cascade');
             $table->foreignId('medicine_batch_id')->constrained(); // الربط بالدفعة ضروري
             $table->integer('quantity');
+            $table->enum(
+                'unit',
+
+                [
+
+                'box',
+
+                'strip',
+
+                'piece'
+
+                ]
+
+            );
+            $table->integer('quantity_pieces')->default(0);
+            $table->foreignId('medicine_unit_id')->nullable()->default(0);
+            $table->integer('quantity_base')->default(0);
             $table->decimal('price', 10, 2); // السعر وقت البيع
             $table->decimal('profit', 10, 2)->default(0);
             $table->timestamps();

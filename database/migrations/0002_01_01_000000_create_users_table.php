@@ -19,7 +19,10 @@ return new class extends Migration
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->string('role');
+            $table->decimal('salary',15,2)->default(250000);
             $table->boolean('is_active')->default(true);
+            $table->string('pin_hash')->nullable();
+            $table->timestamp('pin_set_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
             $table->softDeletes();

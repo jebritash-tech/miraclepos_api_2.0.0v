@@ -17,6 +17,8 @@ class ShiftActivityService
 
     const WITHDRAW = 'withdraw';
 
+    const DEBT = 'debt'; // Added for new debts
+
     const DEBT_PAYMENT = 'debt_payment';
 
     const REFUND = 'refund';

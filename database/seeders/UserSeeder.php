@@ -19,6 +19,7 @@ class UserSeeder extends Seeder
                 'email' => 'admin@pharmacy.test',
                 'password' => Hash::make('123456'),
                 'role' => 'admin',
+                'salary' =>250000,
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -29,6 +30,7 @@ class UserSeeder extends Seeder
                 'email' => 'cashier@pharmacy.test',
                 'password' => Hash::make('123456'),
                 'role' => 'cashier',
+                'salary' =>250000,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]

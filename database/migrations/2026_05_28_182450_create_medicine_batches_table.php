@@ -12,15 +12,31 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('medicine_batches', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('medicine_id')->constrained()->onDelete('cascade');
-            $table->foreignId('branch_id')->constrained();
-            $table->string('batch_number');
-            $table->date('expiry_date')->index();
-            $table->integer('quantity');
-            $table->decimal('selling_price', 10, 2);
-            $table->decimal('cost_price', 10, 2)->default(0);
-            $table->integer('min_stock')->default(10);
+           $table->id();
+            $table->foreignId('medicine_id')->constrained('medicines')->cascadeOnDelete();
+            $table->foreignId('purchase_item_id')->constrained('purchase_items')->cascadeOnDelete();
+            $table->unsignedBigInteger('branch_id')->nullable();
+            $table->foreignId('purchase_unit_id')
+            ->constrained('medicine_units');
+            $table->string('batch_number')->nullable();
+            $table->date('expiry_date')->nullable();
+            $table->decimal('buy_price', 12, 2);
+            $table->decimal('quantity', 12, 2);
+            $table->decimal('remaining_quantity', 12, 2);
+            $table->foreignId('pricing_rule_id')
+                ->nullable()
+                
+                ->constrained('price_engine_rules')
+                ->nullOnDelete();
+
+            $table->decimal('custom_markup_percent', 8, 2)
+                ->nullable()
+               
+                ->comment('نسبة ربح مخصصة لهذه الدفعة فقط');
+
+            $table->string('pricing_notes', 255)
+                ->nullable();
+               
             $table->timestamps();
             
         });

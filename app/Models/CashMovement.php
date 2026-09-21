@@ -19,7 +19,8 @@ class CashMovement extends Model
 
         'amount',
 
-        'notes'
+        'notes',
+        'created_at',  // ✅ جديد
 
     ];
 
