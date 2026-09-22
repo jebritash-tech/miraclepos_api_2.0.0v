@@ -6,27 +6,11 @@ use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * ═══════════════════════════════════════════════════════════════
-     * DatabaseSeeder — نقطة الدخول الرئيسية
-     * ═══════════════════════════════════════════════════════════════
-     * 
-     * التشغيل:
-     *   php artisan migrate:fresh --seed
-     * 
-     * أو:
-     *   php artisan db:seed
-     * ═══════════════════════════════════════════════════════════════
-     */
     public function run(): void
     {
         $this->call([
-            CoreDataSeeder::class,
+            CoreDataSeeder::class,      // 1. البيانات الأساسية (الفروع، الوحدات، التصنيفات، المستخدمين، الإعدادات)
+            MedicinesSeeder::class,     // 2. كتالوج الأدوية (يعتمد على الوحدات من الخطوة 1)
         ]);
-
-        // يمكن إضافة Seeders أخرى هنا لاحقاً
-        // $this->call([
-        //     DemoDataSeeder::class, // للبيئات التجريبية فقط
-        // ]);
     }
 }
