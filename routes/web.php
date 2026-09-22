@@ -54,59 +54,55 @@ Route::get('/setup-system', function () {
 */
 Route::get('/reset-core-data', function () {
     try {
-        $results = [];
-
-        /*
-        |------------------------------------------------------------------
-        | 1. migrate:fresh — حذف كل الجداول وإعادة إنشاءها
-        |------------------------------------------------------------------
-        */
+        set_time_limit(300); // 5 دقائق
+        
+        // 1. قطع الاتصال مع المتصفح مبكراً
+        // (لكن هذه الطريقة صعبة في Laravel بدون Response streaming)
+        
+        // 2. الحل: تنفيذ migrate فقط
         Artisan::call('migrate:fresh', [
             '--force' => true,
+            '--no-interaction' => true,
         ]);
-
-        $results['migrate'] = [
-            'success' => true,
-            'output'  => Artisan::output(),
-        ];
-
-        /*
-        |------------------------------------------------------------------
-        | 2. زرع البيانات الأساسية فقط (CoreDataSeeder)
-        |------------------------------------------------------------------
-        | ⚠️ ملاحظة: لا نستخدم db:seed بدون --class لأنه سيشغّل
-        |    DatabaseSeeder الذي قد يستدعي MedicinesSeeder أيضاً.
-        |    لذلك نحدد CoreDataSeeder بشكل صريح.
-        |------------------------------------------------------------------
-        */
-        Artisan::call('db:seed', [
-            '--class' => 'CoreDataSeeder',
-            '--force' => true,
-        ]);
-
-        $results['seed'] = [
-            'success' => true,
-            'output'  => Artisan::output(),
-        ];
-
+        
         return response()->json([
             'success' => true,
-            'message' => 'تم إعادة تعيين البيانات الأساسية بنجاح',
-            'note'    => 'لم يتم زرع الأدوية — قاعدة البيانات فارغة من الأدوية',
-            'details' => $results,
-            'credentials' => [
-                'admin'   => 'admin@miraclepos.test / password',
-                'cashier' => 'cashier@miraclepos.test / password',
-            ],
+            'step' => 'migrate',
+            'output' => Artisan::output(),
+            'message' => 'تم migrate:fresh. الآن افتح /seed-core-data',
         ]);
-
     } catch (\Throwable $e) {
         return response()->json([
             'success' => false,
-            'message' => 'فشل إعادة التعيين: ' . $e->getMessage(),
-            'file'    => $e->getFile(),
-            'line'    => $e->getLine(),
-            'trace'   => config('app.debug') ? $e->getTraceAsString() : null,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ], 500);
+    }
+});
+
+Route::get('/seed-core-data', function () {
+    try {
+        set_time_limit(300);
+        
+        Artisan::call('db:seed', [
+            '--class' => 'CoreDataSeeder',
+            '--force' => true,
+            '--no-interaction' => true,
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'step' => 'seed',
+            'output' => Artisan::output(),
+            'message' => 'تم الزرع بنجاح',
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
         ], 500);
     }
 });
