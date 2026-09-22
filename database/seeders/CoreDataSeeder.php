@@ -82,24 +82,49 @@ class CoreDataSeeder extends Seeder
         $this->command->line('   ✅ ' . count($branches) . ' فرع');
     }
 
-    /* ============================================================
+        /* ============================================================
        الوحدات (Units)
+       ============================================================
+       
+       ⚠️ هذه الوحدات مبنية على ملف Medicines.xlsx الفعلي
+       وتشمل جميع وحدات البيع المستخدمة في الصيدلية.
+       
+       ملاحظة مهمة:
+       ─────────────────────────────────────────────────────────────
+       القيم مثل "box-strip" في ملف Excel لا تعني وحدة واحدة،
+       بل تعني أن الدواء يُباع بإحدى وحدتين: علبة أو شريط.
+       (نفس الشيء لـ box-tab, box-amp, box-pic, box-supp)
+       
+       لذلك نعرّف الوحدات الأساسية فقط، ويُختار بينها عند البيع.
        ============================================================ */
     private function seedUnits(): void
     {
         $units = [
-            ['name' => 'علبة',   'symbol' => 'BOX',    'active' => 1],
-            ['name' => 'شريط',   'symbol' => 'STRIP',  'active' => 1],
-            ['name' => 'قرص',    'symbol' => 'PIECE',  'active' => 1],
-            ['name' => 'كبسولة', 'symbol' => 'CAP',    'active' => 1],
-            ['name' => 'قارورة', 'symbol' => 'BOTTLE', 'active' => 1],
-            ['name' => 'أنبوبة', 'symbol' => 'TUBE',   'active' => 1],
-            ['name' => 'فيال',   'symbol' => 'VIAL',   'active' => 1],
-            ['name' => 'أمبول',  'symbol' => 'AMP',    'active' => 1],
-            ['name' => 'بخة',    'symbol' => 'SPRAY',  'active' => 1],
-            ['name' => 'كيس',    'symbol' => 'SACHET', 'active' => 1],
-            ['name' => 'مل',     'symbol' => 'ML',     'active' => 1],
-            ['name' => 'جرام',   'symbol' => 'G',      'active' => 1],
+            // ═══════════ وحدات التعبئة الأساسية ═══════════
+            ['name' => 'علبة',              'symbol' => 'BOX',      'active' => 1],
+            ['name' => 'شريط',              'symbol' => 'STRIP',    'active' => 1],
+            ['name' => 'قرص',               'symbol' => 'TAB',      'active' => 1],
+            ['name' => 'قطعة',              'symbol' => 'PIC',      'active' => 1],
+            ['name' => 'حبة',               'symbol' => 'PIECE',    'active' => 1],
+            ['name' => 'كبسولة',            'symbol' => 'CAP',      'active' => 1],
+
+            // ═══════════ وحدات السوائل ═══════════
+            ['name' => 'قارورة',            'symbol' => 'BOTTLE',   'active' => 1],
+            ['name' => 'أنبوبة',            'symbol' => 'TUBE',     'active' => 1],
+            ['name' => 'فيال',              'symbol' => 'VIAL',     'active' => 1],
+            ['name' => 'أمبول',             'symbol' => 'AMP',      'active' => 1],
+            ['name' => 'بخة',               'symbol' => 'SPRAY',    'active' => 1],
+            ['name' => 'كيس',               'symbol' => 'SACHET',   'active' => 1],
+            ['name' => 'مل',                'symbol' => 'ML',       'active' => 1],
+            ['name' => 'جرام',              'symbol' => 'G',        'active' => 1],
+
+            // ═══════════ وحدات خاصة بالأشكال الدوائية ═══════════
+            ['name' => 'قطرة',              'symbol' => 'DROP',     'active' => 1],
+            ['name' => 'استنشاق',           'symbol' => 'INH',      'active' => 1],
+            ['name' => 'محلول وريدي',       'symbol' => 'DRIP',     'active' => 1],
+            ['name' => 'مرهم',              'symbol' => 'TUB',      'active' => 1],
+            ['name' => 'طقم',               'symbol' => 'SET',      'active' => 1],
+            ['name' => 'تحميلة',            'symbol' => 'SUPP',     'active' => 1],
         ];
 
         foreach ($units as $unit) {
@@ -114,7 +139,6 @@ class CoreDataSeeder extends Seeder
 
         $this->command->line('   ✅ ' . count($units) . ' وحدة');
     }
-
     /* ============================================================
        التصنيفات (Categories)
        ============================================================ */
