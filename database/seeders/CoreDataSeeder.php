@@ -82,20 +82,17 @@ class CoreDataSeeder extends Seeder
         $this->command->line('   ✅ ' . count($branches) . ' فرع');
     }
 
-        /* ============================================================
+            /* ============================================================
        الوحدات (Units)
        ============================================================
        
-       ⚠️ هذه الوحدات مبنية على ملف Medicines.xlsx الفعلي
-       وتشمل جميع وحدات البيع المستخدمة في الصيدلية.
+       ⚠️ هذه الوحدات يجب أن تطابق UNIT_MAP في MedicinesSeeder.
        
        ملاحظة مهمة:
        ─────────────────────────────────────────────────────────────
        القيم مثل "box-strip" في ملف Excel لا تعني وحدة واحدة،
        بل تعني أن الدواء يُباع بإحدى وحدتين: علبة أو شريط.
-       (نفس الشيء لـ box-tab, box-amp, box-pic, box-supp)
-       
-       لذلك نعرّف الوحدات الأساسية فقط، ويُختار بينها عند البيع.
+       تُفكَّك هذه القيم في MedicinesSeeder تلقائياً.
        ============================================================ */
     private function seedUnits(): void
     {
@@ -111,6 +108,7 @@ class CoreDataSeeder extends Seeder
             // ═══════════ وحدات السوائل ═══════════
             ['name' => 'قارورة',            'symbol' => 'BOTTLE',   'active' => 1],
             ['name' => 'أنبوبة',            'symbol' => 'TUBE',     'active' => 1],
+            ['name' => 'مرهم',              'symbol' => 'TUB',      'active' => 1],
             ['name' => 'فيال',              'symbol' => 'VIAL',     'active' => 1],
             ['name' => 'أمبول',             'symbol' => 'AMP',      'active' => 1],
             ['name' => 'بخة',               'symbol' => 'SPRAY',    'active' => 1],
@@ -122,7 +120,6 @@ class CoreDataSeeder extends Seeder
             ['name' => 'قطرة',              'symbol' => 'DROP',     'active' => 1],
             ['name' => 'استنشاق',           'symbol' => 'INH',      'active' => 1],
             ['name' => 'محلول وريدي',       'symbol' => 'DRIP',     'active' => 1],
-            ['name' => 'مرهم',              'symbol' => 'TUB',      'active' => 1],
             ['name' => 'طقم',               'symbol' => 'SET',      'active' => 1],
             ['name' => 'تحميلة',            'symbol' => 'SUPP',     'active' => 1],
         ];
