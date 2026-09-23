@@ -1053,5 +1053,84 @@ class SaleController extends Controller
         );
 
     }
+    /*
+|--------------------------------------------------------------------------
+| Recent Sales — Current Open Shift Only (POS Interface)
+|--------------------------------------------------------------------------
+|
+| تُستخدم من واجهة البيع (pos.js) لجلب مبيعات الوردية المفتوحة فقط.
+|
+| ⚠️ لا علاقة لها بـ ReportController::getRecentSales
+|    (المستخدمة في لوحة التحكم لجلب كل المبيعات)
+|
+*/
 
+public function getRecentSalesForCurrentShift(Request $request)
+{
+    $user = $request->user();
+
+    if (!$user) {
+        return response()->json([
+            'message' => 'Unauthenticated.'
+        ], 401);
+    }
+
+    $branchId = $user->branch_id;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Resolve the current OPEN shift for this user/branch
+    |--------------------------------------------------------------------------
+    */
+    $shift = Shift::where('user_id', $user->id)
+        ->where('branch_id', $branchId)
+        ->whereNull('closed_at')
+        ->where('status', 'open')
+        ->latest('id')
+        ->first();
+
+    // لا توجد وردية مفتوحة → لا مبيعات
+    if (!$shift) {
+        return response()->json([
+            'shift'  => null,
+            'recent' => [],
+            'data'   => [],
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fetch sales belonging ONLY to this open shift
+    |--------------------------------------------------------------------------
+    */
+    $sales = Sale::with(['items.batch.medicine', 'items.unit'])
+        ->where('shift_id', $shift->id)
+        ->where('branch_id', $branchId)
+        ->orderBy('id', 'desc')
+        ->limit(50)
+        ->get()
+        ->map(function ($sale) {
+            return [
+                'id'             => $sale->id,
+                'total_amount'   => $sale->total_amount,
+                'profit_amount'  => $sale->profit_amount,
+                'payment_method' => $sale->payment_method,
+                'created_at'     => $sale->created_at,
+                'is_refunded'    => (bool) $sale->is_refunded,
+                'items'          => $sale->items,
+            ];
+        });
+
+    return response()->json([
+        'shift' => [
+            'id'          => $shift->id,
+            'opened_at'   => $shift->opened_at,
+            'cash_sales'  => $shift->cash_sales,
+            'card_sales'  => $shift->card_sales,
+            'sales_count' => $shift->sales_count,
+        ],
+        'recent' => $sales,
+        'data'   => $sales,   // دعم كلا الصيغتين
+    ]);
+}
 }
