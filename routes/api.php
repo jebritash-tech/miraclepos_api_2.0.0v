@@ -328,7 +328,13 @@ Route::middleware(['auth:sanctum', 'session.timeout'])->group(function () {
         Route::prefix('sales')->group(function () {
             Route::get('/medicines', [SaleController::class, 'medicines']);
         });
-
+        /* ============================================================
+           POS — Recent Sales for Current Open Shift
+           ============================================================
+           ⚠️ هذا المسار مخصص لواجهة البيع (POS) فقط
+           ولا علاقة له بـ reports/sales المستخدم في لوحة التحكم
+           ============================================================ */
+        Route::get('pos/recent-sales', [SaleController::class, 'getRecentSalesForCurrentShift']);
         /* ============================================================
            USERS
            ============================================================ */
