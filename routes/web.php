@@ -58,7 +58,6 @@ Route::get('/migrate-fresh', function () {
         // 2. الحل: تنفيذ migrate فقط
         Artisan::call('migrate:fresh', [
             '--force' => true,
-            '--no-interaction' => true,
         ]);
         
         return response()->json([
