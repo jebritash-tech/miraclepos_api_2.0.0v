@@ -35,9 +35,6 @@ Route::get('/setup-system', function () {
 });
 
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Artisan;
 
 Route::get('/reset-core-data', function () {
     // ═══════════════════════════════════════════════════════
