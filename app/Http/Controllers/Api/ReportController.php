@@ -269,7 +269,7 @@ class ReportController extends Controller
         $expiringSoon = MedicineBatch::with('medicine')
             ->when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->where('expiry_date', '>=', today())
-            ->where('expiry_date', '<=', today()->addMonth())
+            ->where('expiry_date', '<=', today()->addDays(60))
             ->get();
         foreach ($expiringSoon as $batch) {
             $alerts[] = [
