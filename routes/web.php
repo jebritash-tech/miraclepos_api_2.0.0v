@@ -34,6 +34,17 @@ Route::get('/setup-system', function () {
     ]);
 });
 
+Route::get('/migrate', function () {
+
+    Artisan::call('migrate', [
+        '--force' => true
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'System Has Created All Tables Successfully...Ready To Seed...'
+    ]);
+});
 
 
 Route::get('/reset-core-data', function () {
