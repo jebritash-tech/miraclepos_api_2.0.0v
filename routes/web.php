@@ -52,6 +52,31 @@ Route::get('/setup-system', function () {
 |   https://your-domain.com/reset-core-data
 |--------------------------------------------------------------------------
 */
+Route::get('/migrate-fresh', function () {
+    try {
+        
+        // 2. الحل: تنفيذ migrate فقط
+        Artisan::call('migrate:fresh', [
+            '--force' => true,
+            '--no-interaction' => true,
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'step' => 'migrate',
+            'output' => Artisan::output(),
+            'message' => 'تم migrate:fresh. الآن افتح /seed-core-data',
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ], 500);
+    }
+});
+
 Route::get('/reset-core-data', function () {
     try {
         set_time_limit(300); // 5 دقائق
