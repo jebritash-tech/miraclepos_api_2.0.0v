@@ -272,9 +272,12 @@ class ShiftController extends Controller
             $this->shiftService->registerWithdrawal($amount, $shift);
 
             return response()->json([
-                'message' => 'تم تسجيل السحب',
-                'shifts'  => $this->getShiftList($request),
-                'stats'   => $this->getShiftStats(),
+                'message'    => 'تم تسجيل السحب',
+                'debt'       => $debt,           // ✅ ضروري
+                'debt_id'    => $debt->id,       // ✅ احتياط
+                'withdrawal' => $withdrawal,
+                'shifts'     => $this->getShiftList($request),
+                'stats'      => $this->getShiftStats(),
             ]);
         });
     }
