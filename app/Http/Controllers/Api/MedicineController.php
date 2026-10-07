@@ -340,66 +340,153 @@ class MedicineController extends Controller
     }
 
     public function updatePricingRule(
-            Request $request,
-            Medicine $medicine
-        ) {
-            $validated = $request->validate([
-
-                'pricing_rule_id' => [
-                    'nullable',
-                    'exists:price_engine_rules,id'
-                ],
-
-            ]);
-
-            if (
-                !empty($validated['pricing_rule_id'])
+                Request $request,
+                Medicine $medicine
             ) {
+                $validated = $request->validate([
 
-                $active = PriceEngineRule::query()
+                    'pricing_rule_id' => [
+                        'nullable',
+                        'exists:price_engine_rules,id'
+                    ],
 
-                    ->where(
-                        'id',
-                        $validated['pricing_rule_id']
-                    )
+                ]);
 
-                    ->where(
-                        'is_active',
-                        true
-                    )
+                if (
+                    !empty($validated['pricing_rule_id'])
+                ) {
 
-                    ->exists();
+                    $active = PriceEngineRule::query()
 
-                if (!$active) {
+                        ->where(
+                            'id',
+                            $validated['pricing_rule_id']
+                        )
 
-                    return response()->json([
+                        ->where(
+                            'is_active',
+                            true
+                        )
 
-                        'message' =>
-                            'قاعدة التسعير المحددة غير مفعلة.'
+                        ->exists();
 
-                    ], 422);
+                    if (!$active) {
+
+                        return response()->json([
+
+                            'message' =>
+                                'قاعدة التسعير المحددة غير مفعلة.'
+
+                        ], 422);
+                    }
                 }
+
+                $medicine->update([
+
+                    'pricing_rule_id' =>
+                        $validated['pricing_rule_id'] ?? null
+
+                ]);
+
+                return response()->json([
+
+                    'success' => true,
+
+                    'message' =>
+                        'تم تحديث قاعدة تسعير الدواء.',
+
+                    'medicine' =>
+                        $medicine->fresh()->load(
+                            'pricingRule'
+                        )
+
+                ]);
+    }
+
+    /* ============================================================
+   ✅ جلب كل الدفعات المتاحة لكل الأدوية في طلب واحد
+   ============================================================ */
+    public function availableBatchesAll(Request $request)
+    {
+        $branchId = $request->input('branch_id');
+
+        $medicines = \App\Models\Medicine::with([
+            'units.unit',
+            'batches' => function ($q) use ($branchId) {
+                $q->where('remaining_quantity', '>', 0)
+                ->when($branchId, fn($b) => $b->where('branch_id', $branchId))
+                ->with('prices')
+                ->orderBy('expiry_date');
             }
+        ])
+        ->whereHas('batches', function ($q) use ($branchId) {
+            $q->where('remaining_quantity', '>', 0)
+            ->when($branchId, fn($b) => $b->where('branch_id', $branchId));
+        })
+        ->get();
 
-            $medicine->update([
+        $result = $medicines->map(function ($medicine) {
+            $baseUnit = $medicine->units->firstWhere('is_base', true)
+                ?? $medicine->units->first();
+            $baseUnitId = $baseUnit?->unit_id;
+            $baseUnitFactor = max(1, (float) ($baseUnit?->factor ?? 1));
 
-                'pricing_rule_id' =>
-                    $validated['pricing_rule_id'] ?? null
+            $batches = $medicine->batches->map(function ($batch) use ($baseUnitId, $baseUnitFactor, $medicine) {
+                $price = $batch->prices->firstWhere('unit_id', $baseUnitId)
+                    ?? $batch->prices->sortByDesc('buy_price')->first();
 
-            ]);
+                $lockedPrices = $batch->prices->where('price_mode', 'manual');
+                $anyLocked = $lockedPrices->isNotEmpty();
+                $lockedPrice = $lockedPrices->first();
 
-            return response()->json([
+                return [
+                    'id'                    => $batch->id,
+                    'batch_number'          => $batch->batch_number,
+                    'expiry_date'           => $batch->expiry_date,
+                    'remaining_quantity'    => (float) $batch->remaining_quantity,
+                    'remaining_packs'       => (int) floor($batch->remaining_quantity / $baseUnitFactor),
+                    'buy_price'             => (float) $batch->buy_price,
+                    'sell_price'            => $price ? (float) $price->sell_price : 0,
+                    'price_id'              => $price?->id,
+                    'unit_name'             => $baseUnit?->unit?->name ?? 'وحدة',
+                    'price_mode'            => $anyLocked ? 'manual' : ($price?->price_mode ?? 'auto'),
+                    'is_locked'             => $anyLocked,
+                    'lock_reason'           => $lockedPrice?->lock_reason,
+                    'locked_at'             => $lockedPrice?->locked_at?->toIso8601String(),
+                    'pricing_rule_id'       => $batch->pricing_rule_id,
+                    'custom_markup_percent' => $batch->custom_markup_percent,
+                    'expires_in_days'       => $batch->expiry_date
+                        ? now()->diffInDays($batch->expiry_date, false)
+                        : null,
+                    'prices' => $batch->prices->map(function ($p) use ($medicine) {
+                        $unit = $medicine->units->firstWhere('unit_id', $p->unit_id);
+                        return [
+                            'id'         => $p->id,
+                            'unit_id'    => $p->unit_id,
+                            'buy_price'  => (float) $p->buy_price,
+                            'sell_price' => (float) $p->sell_price,
+                            'factor'     => (float) ($unit?->factor ?? 1),
+                            'barcode'    => $unit?->barcode,
+                            'is_locked'  => $p->price_mode === 'manual',
+                            'lock_reason'=> $p->lock_reason,
+                        ];
+                    })->values()->toArray(),
+                ];
+            })->values()->toArray();
 
-                'success' => true,
+            $uniquePrices = collect($batches)->pluck('sell_price')->unique()->values();
 
-                'message' =>
-                    'تم تحديث قاعدة تسعير الدواء.',
+            return [
+                'medicine_id' => $medicine->id,
+                'batches'     => $batches,
+                'has_multiple_prices' => $uniquePrices->count() > 1,
+                'price_range' => [
+                    'min' => $uniquePrices->min(),
+                    'max' => $uniquePrices->max(),
+                ],
+            ];
+        });
 
-                'medicine' =>
-                    $medicine->fresh()->load(
-                        'pricingRule'
-                    )
-
-            ]);
-}
+        return response()->json($result);
+    }
 }
