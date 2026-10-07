@@ -69,6 +69,9 @@ Route::middleware(['auth:sanctum', 'session.timeout'])->group(function () {
     Route::get('/medicines/{medicine}/available-batches',
         [BatchPricingController::class, 'availableBatches']);
 
+   Route::get('/medicines/available-batches/all',
+    [MedicineController::class, 'availableBatchesAll']);
+
     Route::post('/batches/{batch}/override-pricing',
         [BatchPricingController::class, 'overrideBatchPricing']);
 
