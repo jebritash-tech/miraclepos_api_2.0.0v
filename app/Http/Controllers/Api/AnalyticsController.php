@@ -47,6 +47,23 @@ class AnalyticsController extends Controller
                 'payment_method', 'created_at',
             ]);
 
+        // ✅ أضف حالة الإرجاع لكل فاتورة
+        $saleIds = $data->pluck('id')->toArray();
+        $refundsBySale = DB::table('refunds')
+            ->whereIn('sale_id', $saleIds)
+            ->select('sale_id', DB::raw('SUM(amount) as total_refunded'))
+            ->groupBy('sale_id')
+            ->get()
+            ->keyBy('sale_id');
+
+        $data = $data->map(function ($sale) use ($refundsBySale) {
+            $refundedAmount = (float) ($refundsBySale->get($sale->id)->total_refunded ?? 0);
+            $sale->total_refunded = $refundedAmount;
+            $sale->has_refunds = $refundedAmount > 0;
+            $sale->is_fully_refunded = $refundedAmount >= (float) $sale->total_amount;
+            return $sale;
+        });
+
         return [
             'data' => $data,
             'meta' => [
@@ -68,59 +85,160 @@ class AnalyticsController extends Controller
 
     private function kpis()
     {
-        // 1. Today's Sales
+        /* ═══════════════════════════════════════════════════════════
+        المبيعات (Gross) — بدون خصم
+        ═══════════════════════════════════════════════════════════ */
         $todaySalesQuery = DB::table('sales')->whereDate('created_at', today());
         $this->applyBranchFilter($todaySalesQuery);
 
-        // 2. Today's Profit
         $todayProfitQuery = DB::table('sales')->whereDate('created_at', today());
         $this->applyBranchFilter($todayProfitQuery);
 
-        // 3. Today's Invoices
         $todayInvoicesQuery = DB::table('sales')->whereDate('created_at', today());
         $this->applyBranchFilter($todayInvoicesQuery);
 
-        // 4. Average Invoice
         $avgInvoiceQuery = DB::table('sales')->whereDate('created_at', today());
         $this->applyBranchFilter($avgInvoiceQuery);
 
-        // 5. Monthly Sales (Current Month)
         $monthlySalesQuery = DB::table('sales')
             ->whereYear('created_at', now()->year)
             ->whereMonth('created_at', now()->month);
         $this->applyBranchFilter($monthlySalesQuery);
 
-        // 6. Monthly Revenue / Profit (Current Month)
         $monthlyRevenueQuery = DB::table('sales')
             ->whereYear('created_at', now()->year)
             ->whereMonth('created_at', now()->month);
         $this->applyBranchFilter($monthlyRevenueQuery);
 
-        // 7. Weekly Sales (Current Week, e.g., starting from Monday or past 7 days)
         $weeklySalesQuery = DB::table('sales')
             ->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()]);
         $this->applyBranchFilter($weeklySalesQuery);
 
-        // Weekly Revenue / Profit (Current Week)
         $weeklyRevenueQuery = DB::table('sales')
             ->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()]);
         $this->applyBranchFilter($weeklyRevenueQuery);
+
+        /* ═══════════════════════════════════════════════════════════
+        ✅ ربح المرتجعات (للخصم من الأرباح)
+        ═══════════════════════════════════════════════════════════ */
+
+        // ربح مرتجعات اليوم
+        $todayRefundProfitQuery = DB::table('refund_items')
+            ->join('refunds', 'refund_items.refund_id', '=', 'refunds.id')
+            ->join('sale_items', 'refund_items.sale_item_id', '=', 'sale_items.id')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereDate('refunds.created_at', today())
+            ->selectRaw('
+                SUM(
+                    sale_items.profit * refund_items.quantity 
+                    / GREATEST(sale_items.quantity, 1)
+                ) as refund_profit
+            ');
+        $this->applyBranchFilter($todayRefundProfitQuery, 'sales.branch_id');
+        $todayRefundProfit = (float) ($todayRefundProfitQuery->value('refund_profit') ?? 0);
+
+        // ربح مرتجعات الأسبوع
+        $weeklyRefundProfitQuery = DB::table('refund_items')
+            ->join('refunds', 'refund_items.refund_id', '=', 'refunds.id')
+            ->join('sale_items', 'refund_items.sale_item_id', '=', 'sale_items.id')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereBetween('refunds.created_at', [now()->startOfWeek(), now()->endOfWeek()])
+            ->selectRaw('
+                SUM(
+                    sale_items.profit * refund_items.quantity 
+                    / GREATEST(sale_items.quantity, 1)
+                ) as refund_profit
+            ');
+        $this->applyBranchFilter($weeklyRefundProfitQuery, 'sales.branch_id');
+        $weeklyRefundProfit = (float) ($weeklyRefundProfitQuery->value('refund_profit') ?? 0);
+
+        // ربح مرتجعات الشهر
+        $monthlyRefundProfitQuery = DB::table('refund_items')
+            ->join('refunds', 'refund_items.refund_id', '=', 'refunds.id')
+            ->join('sale_items', 'refund_items.sale_item_id', '=', 'sale_items.id')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereYear('refunds.created_at', now()->year)
+            ->whereMonth('refunds.created_at', now()->month)
+            ->selectRaw('
+                SUM(
+                    sale_items.profit * refund_items.quantity 
+                    / GREATEST(sale_items.quantity, 1)
+                ) as refund_profit
+            ');
+        $this->applyBranchFilter($monthlyRefundProfitQuery, 'sales.branch_id');
+        $monthlyRefundProfit = (float) ($monthlyRefundProfitQuery->value('refund_profit') ?? 0);
+
+        /* ═══════════════════════════════════════════════════════════
+        ✅ مبلغ المرتجعات (للخصم من المبيعات الصافية)
+        ═══════════════════════════════════════════════════════════ */
+
+        $todayRefundAmountQuery = DB::table('refunds')
+            ->join('sales', 'refunds.sale_id', '=', 'sales.id')
+            ->whereDate('refunds.created_at', today());
+        $this->applyBranchFilter($todayRefundAmountQuery, 'sales.branch_id');
+        $todayRefundAmount = (float) ($todayRefundAmountQuery->sum('refunds.amount') ?? 0);
+
+        $weeklyRefundAmountQuery = DB::table('refunds')
+            ->join('sales', 'refunds.sale_id', '=', 'sales.id')
+            ->whereBetween('refunds.created_at', [now()->startOfWeek(), now()->endOfWeek()]);
+        $this->applyBranchFilter($weeklyRefundAmountQuery, 'sales.branch_id');
+        $weeklyRefundAmount = (float) ($weeklyRefundAmountQuery->sum('refunds.amount') ?? 0);
+
+        $monthlyRefundAmountQuery = DB::table('refunds')
+            ->join('sales', 'refunds.sale_id', '=', 'sales.id')
+            ->whereYear('refunds.created_at', now()->year)
+            ->whereMonth('refunds.created_at', now()->month);
+        $this->applyBranchFilter($monthlyRefundAmountQuery, 'sales.branch_id');
+        $monthlyRefundAmount = (float) ($monthlyRefundAmountQuery->sum('refunds.amount') ?? 0);
+
+        /* ═══════════════════════════════════════════════════════════
+        الإرجاع
+        ═══════════════════════════════════════════════════════════ */
+        $grossTodaySales = (float) $todaySalesQuery->sum('total_amount');
+        $grossWeeklySales = (float) $weeklySalesQuery->sum('total_amount');
+        $grossMonthlySales = (float) $monthlySalesQuery->sum('total_amount');
+
+        $grossTodayProfit = (float) $todayProfitQuery->sum('profit_amount');
+        $grossWeeklyProfit = (float) $weeklyRevenueQuery->sum('profit_amount');
+        $grossMonthlyProfit = (float) $monthlyRevenueQuery->sum('profit_amount');
+
         return [
-            'today_sales'      => $todaySalesQuery->sum('total_amount'),
-            'today_profit'     => $todayProfitQuery->sum('profit_amount'),
-            'weekly_sales'     => $weeklySalesQuery->sum('total_amount'),     
-            'weekly_revenue'   => $weeklyRevenueQuery->sum('profit_amount'),   
-            'weekly_profit'    => $weeklyRevenueQuery->sum('profit_amount'),   
+            // ═══ المبيعات (Gross) ═══
+            'today_sales'        => $grossTodaySales,
+            'weekly_sales'       => $grossWeeklySales,
+            'monthly_sales'      => $grossMonthlySales,
+
+            // ═══ ✅ المبيعات الصافية (Net) ═══
+            'today_net_sales'    => $grossTodaySales - $todayRefundAmount,
+            'weekly_net_sales'   => $grossWeeklySales - $weeklyRefundAmount,
+            'monthly_net_sales'  => $grossMonthlySales - $monthlyRefundAmount,
+
+            // ═══ ✅ مبالغ المرتجعات ═══
+            'today_refunds'      => $todayRefundAmount,
+            'weekly_refunds'     => $weeklyRefundAmount,
+            'monthly_refunds'    => $monthlyRefundAmount,
+
+            // ═══ ✅ الأرباح (بعد خصم ربح المرتجعات) ═══
+            'today_profit'       => $grossTodayProfit - $todayRefundProfit,
+            'weekly_profit'      => $grossWeeklyProfit - $weeklyRefundProfit,
+            'monthly_profit'     => $grossMonthlyProfit - $monthlyRefundProfit,
+            'weekly_revenue'     => $grossWeeklyProfit - $weeklyRefundProfit,
+            'monthly_revenue'    => $grossMonthlyProfit - $monthlyRefundProfit,
+
+            // ═══ ✅ أرباح المرتجعات (للعرض) ═══
+            'today_refunds_profit'   => $todayRefundProfit,
+            'weekly_refunds_profit'  => $weeklyRefundProfit,
+            'monthly_refunds_profit' => $monthlyRefundProfit,
+
+            // ═══ الفواتير ═══
             'today_invoices'   => $todayInvoicesQuery->count(),
             'avg_invoice'      => $avgInvoiceQuery->avg('total_amount') ?? 0,
-            'monthly_sales'    => $monthlySalesQuery->sum('total_amount'),
-            'monthly_revenue'  => $monthlyRevenueQuery->sum('profit_amount'),
-            'monthly_profit'   => $monthlyRevenueQuery->sum('profit_amount'),
+
+            // ═══ المخزون ═══
             'inventory_value'  => $this->calculateInventoryValue(),
             'frozen_capital'   => $this->frozenCapital(),
         ];
     }
-
     private function calculateInventoryValue(): float
     {
         $bestPriceSub = DB::table('medicine_prices')
@@ -156,25 +274,87 @@ class AnalyticsController extends Controller
 
     private function salesProfitChart()
     {
-        $query = DB::table('sales')
+        /* ═══════════════════════════════════════════════════════════
+        المبيعات والأرباح (Gross)
+        ═══════════════════════════════════════════════════════════ */
+        $salesQuery = DB::table('sales')
             ->selectRaw('EXTRACT(MONTH FROM created_at) as month')
             ->selectRaw('SUM(total_amount) as sales')
-            ->selectRaw('SUM(profit_amount) as profit')
+            ->selectRaw('SUM(profit_amount) as gross_profit')
             ->whereYear('created_at', now()->year);
 
-        $this->applyBranchFilter($query);
+        $this->applyBranchFilter($salesQuery);
 
-        return $query->groupByRaw('EXTRACT(MONTH FROM created_at)')
-            ->orderByRaw('EXTRACT(MONTH FROM created_at)')
+        $salesData = $salesQuery->groupByRaw('EXTRACT(MONTH FROM created_at)')
             ->get()
-            ->map(function ($row) {
-                $row->month = Carbon::create()
-                    ->month((int) $row->month)
-                    ->locale('ar')
-                    ->translatedFormat('F');
+            ->keyBy('month');
 
-                return $row;
-            });
+        /* ═══════════════════════════════════════════════════════════
+        ✅ ربح المرتجعات شهرياً
+        ═══════════════════════════════════════════════════════════ */
+        $refundQuery = DB::table('refund_items')
+            ->join('refunds', 'refund_items.refund_id', '=', 'refunds.id')
+            ->join('sale_items', 'refund_items.sale_item_id', '=', 'sale_items.id')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->selectRaw('EXTRACT(MONTH FROM refunds.created_at) as month')
+            ->selectRaw('
+                SUM(
+                    sale_items.profit * refund_items.quantity 
+                    / GREATEST(sale_items.quantity, 1)
+                ) as refund_profit
+            ')
+            ->whereYear('refunds.created_at', now()->year);
+
+        $this->applyBranchFilter($refundQuery, 'sales.branch_id');
+
+        $refundData = $refundQuery->groupByRaw('EXTRACT(MONTH FROM refunds.created_at)')
+            ->get()
+            ->keyBy('month');
+
+        /* ═══════════════════════════════════════════════════════════
+        ✅ مبلغ المرتجعات شهرياً
+        ═══════════════════════════════════════════════════════════ */
+        $refundAmountQuery = DB::table('refunds')
+            ->join('sales', 'refunds.sale_id', '=', 'sales.id')
+            ->selectRaw('EXTRACT(MONTH FROM refunds.created_at) as month')
+            ->selectRaw('SUM(refunds.amount) as refund_amount')
+            ->whereYear('refunds.created_at', now()->year);
+
+        $this->applyBranchFilter($refundAmountQuery, 'sales.branch_id');
+
+        $refundAmountData = $refundAmountQuery->groupByRaw('EXTRACT(MONTH FROM refunds.created_at)')
+            ->get()
+            ->keyBy('month');
+
+        /* ═══════════════════════════════════════════════════════════
+        الدمج
+        ═══════════════════════════════════════════════════════════ */
+        $result = [];
+
+        for ($m = 1; $m <= 12; $m++) {
+            $saleRow = $salesData->get($m);
+            if (!$saleRow) continue;
+
+            $refundProfitRow = $refundData->get($m);
+            $refundProfit = $refundProfitRow ? (float) $refundProfitRow->refund_profit : 0;
+
+            $refundAmountRow = $refundAmountData->get($m);
+            $refundAmount = $refundAmountRow ? (float) $refundAmountRow->refund_amount : 0;
+
+            $grossSales = (float) $saleRow->sales;
+            $grossProfit = (float) $saleRow->gross_profit;
+
+            $result[] = (object) [
+                'month'        => Carbon::create()->month($m)->locale('ar')->translatedFormat('F'),
+                'sales'        => $grossSales,                             // Gross
+                'net_sales'    => $grossSales - $refundAmount,             // ✅ Net
+                'refunds'      => $refundAmount,                           // ✅ المرتجعات
+                'profit'       => $grossProfit - $refundProfit,            // ✅ صافي الربح
+                'gross_profit' => $grossProfit,                            // Gross Profit
+            ];
+        }
+
+        return collect($result);
     }
 
     private function growthChart()
@@ -254,15 +434,30 @@ class AnalyticsController extends Controller
         return max(0, $score);
     }
 
-   private function topSellingProducts()
+    private function topSellingProducts()
     {
+        /* ═══════════════════════════════════════════════════════════
+        ✅ احسب الكميات المُرتجعة لكل بند
+        ═══════════════════════════════════════════════════════════ */
+        $refundedSub = DB::table('refund_items')
+            ->select(
+                'sale_item_id',
+                DB::raw('SUM(quantity) as refunded_quantity')
+            )
+            ->groupBy('sale_item_id');
+
         $query = DB::table('sale_items')
             ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
             ->join('medicine_batches', 'sale_items.medicine_batch_id', '=', 'medicine_batches.id')
             ->join('medicines', 'medicine_batches.medicine_id', '=', 'medicines.id')
+            ->leftJoinSub($refundedSub, 'refunded', function ($join) {
+                $join->on('sale_items.id', '=', 'refunded.sale_item_id');
+            })
             ->select(
                 'medicines.name',
-                DB::raw('SUM(sale_items.quantity) qty')
+                DB::raw('
+                    SUM(sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) qty
+                ')
             );
 
         if ($this->branchId) {
@@ -270,6 +465,7 @@ class AnalyticsController extends Controller
         }
 
         return $query->groupBy('medicines.id', 'medicines.name')
+            ->havingRaw('SUM(sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) > 0')
             ->orderByDesc('qty')
             ->limit(10)
             ->get();
@@ -277,13 +473,32 @@ class AnalyticsController extends Controller
 
     private function topProfitProducts()
     {
+        /* ═══════════════════════════════════════════════════════════
+        ✅ احسب الكميات المُرتجعة لكل بند
+        ═══════════════════════════════════════════════════════════ */
+        $refundedSub = DB::table('refund_items')
+            ->select(
+                'sale_item_id',
+                DB::raw('SUM(quantity) as refunded_quantity')
+            )
+            ->groupBy('sale_item_id');
+
         $query = DB::table('sale_items')
             ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
             ->join('medicine_batches', 'sale_items.medicine_batch_id', '=', 'medicine_batches.id')
             ->join('medicines', 'medicine_batches.medicine_id', '=', 'medicines.id')
+            ->leftJoinSub($refundedSub, 'refunded', function ($join) {
+                $join->on('sale_items.id', '=', 'refunded.sale_item_id');
+            })
             ->select(
                 'medicines.name',
-                DB::raw('SUM(sale_items.profit) profit')
+                DB::raw('
+                    SUM(
+                        sale_items.profit 
+                        * (sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) 
+                        / GREATEST(sale_items.quantity, 1)
+                    ) profit
+                ')
             );
 
         if ($this->branchId) {
@@ -291,6 +506,13 @@ class AnalyticsController extends Controller
         }
 
         return $query->groupBy('medicines.id', 'medicines.name')
+            ->havingRaw('
+                SUM(
+                    sale_items.profit 
+                    * (sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) 
+                    / GREATEST(sale_items.quantity, 1)
+                ) > 0
+            ')
             ->orderByDesc('profit')
             ->limit(10)
             ->get();
