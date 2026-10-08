@@ -50,20 +50,33 @@ class FinancialReportController extends Controller
             ],
             'branch' => $branchInfo,
             'summary' => [
+                // ═══ Gross (إجمالي) ═══
                 'total_sales'       => $sales['total'],
                 'total_profit'      => $sales['profit'],
+
+                // ═══ ✅ المرتجعات ═══
                 'total_refunds'     => $refunds['total'],
+                'refund_profit'     => $refunds['refund_profit'],   // ✅ جديد
+
+                // ═══ ✅ صافي المبيعات ═══
+                'net_sales'         => $sales['total'] - $refunds['total'],
+
+                // ═══ المصروفات والسحوبات ═══
                 'total_expenses'    => $expenses['total'],
                 'total_withdrawals' => $withdraws['total'],
                 'total_purchases'   => $purchases['total'],
                 'total_debts_paid'  => $debtsPaid['total'],
                 'total_salaries'    => $salaries['total'],
+
+                // ═══ ✅ net_revenue — المبيعات الفعلية بعد كل الخصومات ═══
                 'net_revenue'       => $sales['total'] - $refunds['total']
-                                       - $expenses['total'] - $withdraws['total']
-                                       - $salaries['total'],
-                'net_profit'        => $sales['profit'] - $refunds['total']
-                                       - $expenses['total'] - $withdraws['total']
-                                       - $salaries['total'],
+                                    - $expenses['total'] - $withdraws['total']
+                                    - $salaries['total'],
+
+                // ═══ ✅ net_profit — الربح الصافي (يخصم ربح المرتجع وليس مبلغه) ═══
+                'net_profit'        => $sales['profit'] - $refunds['refund_profit']
+                                    - $expenses['total'] - $withdraws['total']
+                                    - $salaries['total'],
             ],
             'breakdown' => [
                 'sales_by_payment' => $sales['by_payment'],
@@ -181,9 +194,27 @@ class FinancialReportController extends Controller
             $q->whereHas('sale', fn($s) => $s->where('branch_id', $branchId));
         }
 
+        /* ═══════════════════════════════════════════════════════════
+        ✅ ربح المرتجعات (لخصمه من الأرباح)
+        ═══════════════════════════════════════════════════════════ */
+        $refundProfitQuery = DB::table('refund_items')
+            ->join('refunds', 'refund_items.refund_id', '=', 'refunds.id')
+            ->join('sale_items', 'refund_items.sale_item_id', '=', 'sale_items.id')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereBetween('refunds.created_at', [$range['from'], $range['to']])
+            ->when($branchId && $branchId !== 'all', fn($qq) => $qq->where('sales.branch_id', $branchId))
+            ->selectRaw('
+                SUM(
+                    sale_items.profit * refund_items.quantity 
+                    / GREATEST(sale_items.quantity, 1)
+                ) as refund_profit
+            ')
+            ->value('refund_profit') ?? 0;
+
         return [
-            'total' => (float) $q->sum('amount'),
-            'count' => $q->count(),
+            'total'         => (float) $q->sum('amount'),
+            'count'         => $q->count(),
+            'refund_profit' => (float) $refundProfitQuery,   // ✅ جديد
         ];
     }
     /* ============================================================
