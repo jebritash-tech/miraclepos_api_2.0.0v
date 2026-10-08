@@ -167,40 +167,82 @@ class ReportController extends Controller
     {
         $branchId = $request->query('branch_id');
 
-        // 1. إجمالي المبيعات اليومية
+        /* ═══════════════════════════════════════════════════════════
+        1. إجمالي المبيعات اليومية (Gross)
+        ═══════════════════════════════════════════════════════════ */
         $dailySales = Sale::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->whereDate('created_at', today())
             ->sum('total_amount');
 
-        // 2. عدد فواتير اليوم
+        /* ═══════════════════════════════════════════════════════════
+        2. عدد فواتير اليوم
+        ═══════════════════════════════════════════════════════════ */
         $invoiceCount = Sale::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->whereDate('created_at', today())
             ->count();
 
-        // 3. عدد الأدوية منخفضة المخزون (الكمية <= الحد الأدنى)
+        /* ═══════════════════════════════════════════════════════════
+        3. عدد الأدوية منخفضة المخزون
+        ═══════════════════════════════════════════════════════════ */
         $lowStockItems = Inventory::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->whereColumn('quantity', '<=', 'minimum_quantity')
             ->count();
 
-        // 4. عدد الأدوية منتهية الصلاحية (دفعات منتهية الصلاحية)
+        /* ═══════════════════════════════════════════════════════════
+        4. عدد الأدوية منتهية الصلاحية
+        ═══════════════════════════════════════════════════════════ */
         $expiredCount = MedicineBatch::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->where('expiry_date', '<', today())
             ->count();
 
-        // 5. إجمالي عدد الأدوية الفريدة
+        /* ═══════════════════════════════════════════════════════════
+        5. إجمالي عدد الأدوية الفريدة
+        ═══════════════════════════════════════════════════════════ */
         $totalItems = Medicine::count();
 
-        // 6. أرباح اليوم
-        $profitToday = Sale::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
+        /* ═══════════════════════════════════════════════════════════
+        6. أرباح اليوم (بعد خصم المرتجعات)
+        ═══════════════════════════════════════════════════════════ */
+        $grossProfitToday = Sale::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->whereDate('created_at', today())
             ->sum('profit_amount');
 
-        // 7. عدد المشتريات اليوم
+        // ✅ ربح مرتجعات اليوم (يُخصم من الأرباح)
+        $refundProfitToday = (float) DB::table('refund_items')
+            ->join('refunds', 'refund_items.refund_id', '=', 'refunds.id')
+            ->join('sale_items', 'refund_items.sale_item_id', '=', 'sale_items.id')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereDate('refunds.created_at', today())
+            ->when($branchId && $branchId !== 'all', fn($q) => $q->where('sales.branch_id', $branchId))
+            ->selectRaw('
+                SUM(
+                    sale_items.profit * refund_items.quantity 
+                    / GREATEST(sale_items.quantity, 1)
+                ) as refund_profit
+            ')
+            ->value('refund_profit') ?? 0;
+
+        $profitToday = (float) $grossProfitToday - $refundProfitToday;
+
+        /* ═══════════════════════════════════════════════════════════
+        ✅ 6-ب. مبلغ مرتجعات اليوم (للخصم من المبيعات الصافية)
+        ═══════════════════════════════════════════════════════════ */
+        $todayRefundAmount = (float) DB::table('refunds')
+            ->join('sales', 'refunds.sale_id', '=', 'sales.id')
+            ->whereDate('refunds.created_at', today())
+            ->when($branchId && $branchId !== 'all', fn($q) => $q->where('sales.branch_id', $branchId))
+            ->sum('refunds.amount') ?? 0;
+
+        /* ═══════════════════════════════════════════════════════════
+        7. عدد المشتريات اليوم
+        ═══════════════════════════════════════════════════════════ */
         $shipmentsCount = Purchase::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->whereDate('created_at', today())
             ->count();
 
-        // 8. المبيعات الأسبوعية (للرسم البياني)
+        /* ═══════════════════════════════════════════════════════════
+        8. المبيعات الأسبوعية (للرسم البياني)
+        ═══════════════════════════════════════════════════════════ */
         $weeklySales = collect(range(6, 0))->map(function($i) use ($branchId) {
             $date = Carbon::today()->subDays($i);
             $total = Sale::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
@@ -213,29 +255,43 @@ class ReportController extends Controller
             ];
         });
 
-        // 9. أعلى 5 أدوية مبيعاً
-        $topMedicines = SaleItem::select(
-                'medicines.name',
-                DB::raw('SUM(sale_items.quantity) as total_quantity')
-            )
+        /* ═══════════════════════════════════════════════════════════
+        9. أعلى 5 أدوية مبيعاً (بعد خصم المرتجعات)
+        ═══════════════════════════════════════════════════════════ */
+        $refundedSub = DB::table('refund_items')
+            ->select('sale_item_id', DB::raw('SUM(quantity) as refunded_quantity'))
+            ->groupBy('sale_item_id');
+
+        $topMedicines = DB::table('sale_items')
             ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
             ->join('medicine_batches', 'sale_items.medicine_batch_id', '=', 'medicine_batches.id')
             ->join('medicines', 'medicine_batches.medicine_id', '=', 'medicines.id')
+            ->leftJoinSub($refundedSub, 'refunded', function ($join) {
+                $join->on('sale_items.id', '=', 'refunded.sale_item_id');
+            })
             ->when($branchId && $branchId !== 'all', fn($q) => $q->where('sales.branch_id', $branchId))
+            ->select(
+                'medicines.name',
+                DB::raw('
+                    SUM(sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) as total_quantity
+                ')
+            )
             ->groupBy('medicines.id', 'medicines.name')
+            ->havingRaw('SUM(sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) > 0')
             ->orderBy('total_quantity', 'desc')
             ->limit(5)
             ->get()
             ->map(fn($item) => [
                 'name' => $item->name,
-                'quantity' => $item->total_quantity,
-                'status' => 'متوفر' // يمكن تحديثه لاحقاً
+                'quantity' => (int) $item->total_quantity,
+                'status' => 'متوفر'
             ]);
 
-        // 10. التنبيهات (بأسماء الأدوية)
+        /* ═══════════════════════════════════════════════════════════
+        10. التنبيهات
+        ═══════════════════════════════════════════════════════════ */
         $alerts = [];
 
-        // الأدوية منخفضة المخزون
         $lowStockMedicines = Inventory::with('medicine')
             ->when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->whereColumn('quantity', '<=', 'minimum_quantity')
@@ -250,7 +306,6 @@ class ReportController extends Controller
             ];
         }
 
-        // الأدوية منتهية الصلاحية
         $expiredBatches = MedicineBatch::with('medicine')
             ->when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->where('expiry_date', '<', today())
@@ -265,25 +320,35 @@ class ReportController extends Controller
             ];
         }
 
-        // الأدوية التي ستنتهي صلاحيتها خلال شهرين
         $expiringSoon = MedicineBatch::with('medicine')
             ->when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->where('expiry_date', '>=', today())
             ->where('expiry_date', '<=', today()->addDays(60))
             ->get();
         foreach ($expiringSoon as $batch) {
+            // ✅ احسب الفرق بشكل صريح (قد يكون 0 أو موجباً)
+            $daysLeft = (int) now()->startOfDay()->diffInDays(
+                \Carbon\Carbon::parse($batch->expiry_date)->startOfDay(),
+                false
+            );
+
+            $title = $daysLeft <= 0
+                ? $batch->medicine->name . ' ينتهي اليوم!'
+                : $batch->medicine->name . ' سينتهي صلاحيته بعد ' . $daysLeft . ' يوم';
+
             $alerts[] = [
                 'id' => 'soon_' . $batch->id,
-                'title' => $batch->medicine->name . ' سينتهي صلاحيته بعد ' . now()->diffInDays($batch->expiry_date) . ' يوم',
+                'title' => $title,
                 'desc' => 'تاريخ الصلاحية: ' . $batch->expiry_date,
                 'color' => '#f39c12',
                 'severity' => 'تنبيه'
             ];
         }
 
-        // 11. الأنشطة الأخيرة
+        /* ═══════════════════════════════════════════════════════════
+        11. الأنشطة الأخيرة
+        ═══════════════════════════════════════════════════════════ */
         $recentActivities = InventoryMovement::with('medicine')
-
             ->when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
             ->latest()
             ->limit(5)
@@ -296,36 +361,56 @@ class ReportController extends Controller
                 'color' => $movement->type == 'sale' ? '#3498db' : '#2ecc71',
                 'icon' => $movement->type == 'sale' ? 'fas fa-shopping-cart' : 'fas fa-plus-circle'
             ]);
-        // تقدير قيمة المخزون (مجموع الكميات × متوسط سعر الشراء)
-        // قيمة المخزون الحالي
+
+        /* ═══════════════════════════════════════════════════════════
+        12. قيمة المخزون
+        ═══════════════════════════════════════════════════════════ */
         $inventoryValue = $this->calculateInventoryValue($branchId);
 
-        // أعلى 5 أدوية ربحية
-        $topProfit = SaleItem::select(
-                'medicines.name',
-                DB::raw('SUM((sale_items.price - medicine_batches.buy_price) * sale_items.quantity) as total_profit')
-            )
+        /* ═══════════════════════════════════════════════════════════
+        13. أعلى 5 أدوية ربحية (بعد خصم المرتجعات)
+        ═══════════════════════════════════════════════════════════ */
+        $refundedSub2 = DB::table('refund_items')
+            ->select('sale_item_id', DB::raw('SUM(quantity) as refunded_quantity'))
+            ->groupBy('sale_item_id');
+
+        $topProfit = DB::table('sale_items')
             ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
             ->join('medicine_batches', 'sale_items.medicine_batch_id', '=', 'medicine_batches.id')
             ->join('medicines', 'medicine_batches.medicine_id', '=', 'medicines.id')
+            ->leftJoinSub($refundedSub2, 'refunded', function ($join) {
+                $join->on('sale_items.id', '=', 'refunded.sale_item_id');
+            })
             ->when($branchId && $branchId !== 'all', fn($q) => $q->where('sales.branch_id', $branchId))
+            ->select(
+                'medicines.name',
+                DB::raw('
+                    SUM(
+                        sale_items.profit 
+                        * (sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) 
+                        / GREATEST(sale_items.quantity, 1)
+                    ) as total_profit
+                ')
+            )
             ->groupBy('medicines.id', 'medicines.name')
+            ->havingRaw('
+                SUM(
+                    sale_items.profit 
+                    * (sale_items.quantity - COALESCE(refunded.refunded_quantity, 0)) 
+                    / GREATEST(sale_items.quantity, 1)
+                ) > 0
+            ')
             ->orderBy('total_profit', 'desc')
             ->limit(5)
             ->get()
             ->map(fn($item) => [
                 'name' => $item->name,
                 'profit' => (float) $item->total_profit,
-        ]);
+            ]);
 
-        // ============================================================
-        // توزيع المبيعات حسب التصنيفات (بناءً على المبيعات الفعلية)
-        // ============================================================
-
-        // ============================================================
-        // 4. توزيع المبيعات حسب التصنيفات (بيانات حقيقية)
-        // ============================================================
-
+        /* ═══════════════════════════════════════════════════════════
+        14. توزيع المبيعات حسب التصنيفات
+        ═══════════════════════════════════════════════════════════ */
         $distribution = Category::select(
                 'categories.id',
                 'categories.name',
@@ -339,47 +424,79 @@ class ReportController extends Controller
                 return $q->where('sales.branch_id', $branchId);
             })
             ->groupBy('categories.id', 'categories.name')
-            ->havingRaw('COALESCE(SUM(sale_items.price * sale_items.quantity), 0) > 0')  // ✅
+            ->havingRaw('COALESCE(SUM(sale_items.price * sale_items.quantity), 0) > 0')
             ->orderBy('total_sales', 'desc')
             ->get();
-            // 12. فواتير اليوم (بالتفصيل)
-            $todayInvoices = Sale::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
-                ->whereDate('created_at', today())
-                ->latest()
-                ->limit(30)
-                ->get()
-                ->map(function ($sale) {
-                    $totalRefunded = Refund::where('sale_id', $sale->id)->sum('amount');
-                    return [
-                        'id'             => $sale->id,
-                        'total_amount'   => (float) $sale->total_amount,
-                        'payment_method' => $sale->payment_method ?: 'cash',
-                        'bank_name'      => $sale->bank_name,
-                        'bank_reference' => $sale->bank_reference,
-                        'bank_notes'     => $sale->bank_notes,
-                        'created_at'     => $sale->created_at?->format('H:i'),
-                        'is_refunded'    => $totalRefunded >= $sale->total_amount,
-                        'total_refunded' => (float) $totalRefunded,
-                        
-                    ];
-                });
-            return response()->json([
-            'daily_sales'       => $dailySales,
-            'invoice_count'     => $invoiceCount,
-            'low_stock_items'   => $lowStockItems,
-            'expired_count'     => $expiredCount,
-            'total_items'       => $totalItems,
-            'profit_today'      => $profitToday,
-            'shipments_count'   => $shipmentsCount,
-            'weekly_sales'      => $weeklySales,
-            'top_medicines'     => $topMedicines,
-            'alerts'            => $alerts,
-            'recent_activities' => $recentActivities,
-            'inventory_value' => $inventoryValue,
-            'top_profit' => $topProfit,
-            'distribution' => $distribution,
-            'today_invoices' => $todayInvoices,
-             
+
+        /* ═══════════════════════════════════════════════════════════
+        15. فواتير اليوم (بالتفصيل)
+        ═══════════════════════════════════════════════════════════ */
+        $todayInvoices = Sale::when($branchId && $branchId !== 'all', fn($q) => $q->where('branch_id', $branchId))
+            ->whereDate('created_at', today())
+            ->latest()
+            ->limit(30)
+            ->get()
+            ->map(function ($sale) {
+                $totalRefunded = Refund::where('sale_id', $sale->id)->sum('amount');
+                return [
+                    'id'             => $sale->id,
+                    'total_amount'   => (float) $sale->total_amount,
+                    'payment_method' => $sale->payment_method ?: 'cash',
+                    'bank_name'      => $sale->bank_name,
+                    'bank_reference' => $sale->bank_reference,
+                    'bank_notes'     => $sale->bank_notes,
+                    'created_at'     => $sale->created_at?->format('H:i'),
+                    'is_refunded'    => $totalRefunded >= $sale->total_amount,
+                    'has_refunds'    => $totalRefunded > 0,
+                    'total_refunded' => (float) $totalRefunded,
+                ];
+            });
+
+        /* ═══════════════════════════════════════════════════════════
+        Return
+        ═══════════════════════════════════════════════════════════ */
+        return response()->json([
+            // المبيعات (Gross)
+            'daily_sales'          => $dailySales,
+
+            // ✅ المبيعات الصافية (Net)
+            'today_net_sales'      => $dailySales - $todayRefundAmount,
+
+            // ✅ مبالغ المرتجعات
+            'today_refunds'        => $todayRefundAmount,
+
+            // الفواتير
+            'invoice_count'        => $invoiceCount,
+
+            // الأرباح (Net)
+            'profit_today'         => $profitToday,
+            'today_refunds_profit' => $refundProfitToday,   // ✅ ربح المرتجعات (للعرض)
+
+            // المخزون
+            'low_stock_items'      => $lowStockItems,
+            'expired_count'        => $expiredCount,
+            'total_items'          => $totalItems,
+            'inventory_value'      => $inventoryValue,
+
+            // المشتريات
+            'shipments_count'      => $shipmentsCount,
+
+            // المبيعات الأسبوعية
+            'weekly_sales'         => $weeklySales,
+
+            // الأكثر مبيعاً والأعلى ربحية
+            'top_medicines'        => $topMedicines,
+            'top_profit'           => $topProfit,
+
+            // التنبيهات والأنشطة
+            'alerts'               => $alerts,
+            'recent_activities'    => $recentActivities,
+
+            // التوزيع
+            'distribution'         => $distribution,
+
+            // فواتير اليوم
+            'today_invoices'       => $todayInvoices,
         ]);
     }
 
